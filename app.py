@@ -23,6 +23,7 @@ st.markdown(
 prices = {
     1: 100,
     2: 200,
+    3: 300,
     4: 350
 }
 
@@ -198,7 +199,7 @@ st.subheader("① 販売方法を選択")
 
 pack_size = st.radio(
     "販売方法",
-    options=[1, 2, 4],
+    options=[1, 2, 3, 4],
     format_func=lambda n: f"{n}本（{prices[n]}円）",
     horizontal=True
 )
@@ -317,11 +318,15 @@ if st.button(
             f"{prices[pack_size]}円で販売しました！"
         )
 
-    except Exception:
+    except Exception as e:
+        import traceback
+
         st.error(
             "販売記録を保存できませんでした。"
             "通信状態やデータベースを確認してください。"
         )
+        st.code(traceback.format_exc())
+        print(traceback.format_exc(), flush=True)
 
 
 st.divider()
@@ -466,6 +471,7 @@ product_counts = {
 set_counts = {
     1: 0,
     2: 0,
+    3: 0,
     4: 0
 }
 
