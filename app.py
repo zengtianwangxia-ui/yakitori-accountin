@@ -13,11 +13,15 @@ try:
 except Exception:
     DATABASE_URL = os.getenv("DATABASE_URL")
 
-st.title("焼き鳥販売システム")
+st.markdown(
+    "<h3 style='margin: 0 0 8px 0; white-space: nowrap;'>"
+    "焼き鳥販売システム</h3>",
+    unsafe_allow_html=True
+)
 
 # 販売価格（仮の金額）
 prices = {
-    1: 130,
+    1: 150,
     2: 250,
     4: 350
 }
@@ -215,7 +219,11 @@ for row_start in range(0, len(products), 2):
     for col, product in zip([col1, col2], row_products):
         with col:
             with st.container(border=True):
-                st.markdown(f"### {product}")
+                st.markdown(
+                    f"<div style='font-size:16px; font-weight:bold; "
+                    f"white-space:nowrap; margin-bottom:4px;'>{product}</div>",
+                    unsafe_allow_html=True
+                )
 
                 minus_col, count_col, plus_col = st.columns([1, 1, 1])
 
