@@ -8,7 +8,10 @@ from datetime import datetime
 # .envファイルから接続情報を読み込む
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+try:
+    DATABASE_URL = st.secrets["DATABASE_URL"]
+except Exception:
+    DATABASE_URL = os.getenv("DATABASE_URL")
 
 st.title("焼き鳥販売システム")
 
