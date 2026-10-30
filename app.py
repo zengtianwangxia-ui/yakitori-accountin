@@ -161,6 +161,24 @@ if "quantities" not in st.session_state:
         product: 0 for product in products
     }
 
+def cancel_all_sales():
+    connection = psycopg2.connect(DATABASE_URL)
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            UPDATE public.sales_history
+            SET cancelled = TRUE
+            WHERE cancelled = FALSE
+            RETURNING id
+        """)
+        cancelled_ids = [row[0] for row in cursor.fetchall()]
+        connection.commit()
+        return cancelled_ids
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 # 商品の本数を変更する関数
 def change_quantity(product, amount):
@@ -302,6 +320,60 @@ st.divider()
 
 # 販売履歴
 st.subheader("販売履歴")
+
+# 一括取り消しの確認状態
+if "confirm_cancel_all" not in st.session_state:
+    st.session_state.confirm_cancel_all = False
+
+# 取り消されていない販売があるか確認
+has_active_sales = any(
+    not record.get("cancelled", False)
+    for record in st.session_state.sales_history
+)
+
+if st.button(
+    "全販売記録を取り消す",
+    disabled=not has_active_sales,
+    use_container_width=True
+):
+    st.session_state.confirm_cancel_all = True
+
+# 確認画面
+if st.session_state.confirm_cancel_all:
+    st.warning(
+        "本当にすべての販売記録を取り消しますか？"
+        "この操作は元に戻せません。"
+    )
+
+    confirm_col, cancel_col = st.columns(2)
+
+    with confirm_col:
+        if st.button(
+            "一括取り消しを確定",
+            type="primary",
+            use_container_width=True
+        ):
+            try:
+                cancel_all_sales()
+
+                # 画面上の履歴も更新
+                for record in st.session_state.sales_history:
+                    record["cancelled"] = True
+
+                st.session_state.confirm_cancel_all = False
+                st.success("すべての販売記録を取り消しました！")
+                st.rerun()
+
+            except Exception:
+                st.error("一括取り消しに失敗しました。")
+
+    with cancel_col:
+        if st.button(
+            "やめる",
+            use_container_width=True
+        ):
+            st.session_state.confirm_cancel_all = False
+            st.rerun()
 
 if len(st.session_state.sales_history) == 0:
     st.write("まだ販売履歴はありません。")
