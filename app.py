@@ -24,7 +24,8 @@ prices = {
     1: 150,
     2: 250,
     3: 350,
-    4: 400
+    4: 400,
+    5: 350
 }
 
 # 商品一覧
@@ -45,9 +46,8 @@ def load_sales_history():
 
         cursor.execute("""
             SELECT id, sold_at, pack_size, price,
-                   quantities, cancelled
+                quantities, cancelled, special_set
             FROM public.sales_history
-            ORDER BY id ASC
         """)
 
         rows = cursor.fetchall()
@@ -55,7 +55,7 @@ def load_sales_history():
         history = []
 
         for row in rows:
-            sale_id, sold_at, pack_size, price, quantities, cancelled = row
+            sale_id, sold_at, pack_size, price, quantities, cancelled, special_set = row
 
             history.append({
                 "id": sale_id,
@@ -63,6 +63,7 @@ def load_sales_history():
                 "pack_size": pack_size,
                 "price": price,
                 "quantities": quantities,
+                "special_set": special_set,
                 "cancelled": cancelled
             })
 
@@ -73,22 +74,24 @@ def load_sales_history():
 
 
 # データベースに販売記録を保存する
-def save_sale(pack_size, price, quantities):
+def save_sale(pack_size, price, quantities, special_set=False):
     connection = psycopg2.connect(DATABASE_URL)
 
     try:
         cursor = connection.cursor()
 
+  
         cursor.execute("""
             INSERT INTO public.sales_history
-                (pack_size, price, quantities)
-            VALUES (%s, %s, %s)
+                (pack_size, price, quantities, special_set)
+            VALUES (%s, %s, %s, %s)
             RETURNING id, sold_at
         """, (
             pack_size,
             price,
-            Json(quantities)
-        ))
+            Json(quantities),
+            special_set
+))
 
         sale_id, sold_at = cursor.fetchone()
 
@@ -100,6 +103,7 @@ def save_sale(pack_size, price, quantities):
             "pack_size": pack_size,
             "price": price,
             "quantities": quantities,
+            "special_set": special_set,
             "cancelled": False
         }
 
@@ -199,8 +203,12 @@ st.subheader("① 販売方法を選択")
 
 pack_size = st.radio(
     "販売方法",
-    options=[1, 2, 3, 4],
-    format_func=lambda n: f"{n}本（{prices[n]}円）",
+    options=[1, 2, 3, 4, 5],
+    format_func=lambda n: (
+        "4本・ネギま限定（350円）"
+        if n == 5
+        else f"{n}本（{prices[n]}円）"
+    ),
     horizontal=True
 )
 
@@ -263,21 +271,34 @@ for row_start in range(0, len(products), 2):
 # 現在の選択本数
 total = sum(st.session_state.quantities.values())
 
+# 5番目は4本すべてネギま限定
+is_negi_only = (
+    st.session_state.quantities["ネギま・タレ"]
+    + st.session_state.quantities["ネギま・塩"]
+    == 4
+)
+
+# 実際に必要な本数
+required_total = 4 if pack_size == 5 else pack_size
+
 st.divider()
 
 st.subheader("③ 販売内容を確認")
 
 st.metric(
     "選択中の本数",
-    f"{total} / {pack_size}本"
+    f"{total} / {required_total}本"
 )
 
-if total < pack_size:
-    st.info(f"あと{pack_size - total}本選んでね。")
+if pack_size == 5 and not is_negi_only:
+    st.warning("このセットはネギま4本限定です。")
 
-elif total > pack_size:
+elif total < required_total:
+    st.info(f"あと{required_total - total}本選んでね。")
+
+elif total > required_total:
     st.warning(
-        f"{total - pack_size}本多いよ。商品を減らしてね。"
+        f"{total - required_total}本多いよ。商品を減らしてね。"
     )
 
 else:
@@ -289,7 +310,10 @@ if st.button(
     "販売を確定",
     type="primary",
     use_container_width=True,
-    disabled=(total != pack_size)
+    disabled=(
+    total != (4 if pack_size == 5 else pack_size)
+    or (pack_size == 5 and not is_negi_only)
+)
 ):
     quantities = {
         product: count
@@ -298,11 +322,23 @@ if st.button(
     }
 
     try:
-        # 先にデータベースへ保存する
+        # 基本価格
+        sale_price = prices[pack_size]
+
+        # 4本すべてネギまの場合は350円
+        if (
+            pack_size == 4
+            and quantities.get("ネギま・タレ", 0)
+            + quantities.get("ネギま・塩", 0) == 4
+        ):
+
+            sale_price = prices[pack_size]
+
         sale_record = save_sale(
-            pack_size,
-            prices[pack_size],
-            quantities
+            required_total,
+            sale_price,
+            quantities,
+            special_set=(pack_size == 5)
         )
 
         # 保存に成功したら画面の履歴にも追加する
@@ -313,10 +349,13 @@ if st.button(
             product: 0 for product in products
         }
 
-        st.success(
-            f"{pack_size}本セットを"
-            f"{prices[pack_size]}円で販売しました！"
+        set_name = (
+            "4本・ネギま限定"
+            if pack_size == 5
+            else f"{pack_size}本セット"
         )
+
+        st.success(f"{set_name}を{sale_price}円で販売しました！")
 
     except Exception as e:
         import traceback
@@ -405,9 +444,13 @@ else:
         with st.container(border=True):
             st.write(f"**{record['time']}**")
 
-            st.write(
-                f"{record['pack_size']}本セット：{details}"
-            )
+            
+            if record.get("special_set", False):
+                set_name = "4本・ネギま限定"
+            else:
+                set_name = f"{record['pack_size']}本セット"
+
+            st.write(f"{set_name}：{details}")
 
             st.write(f"販売金額：{record['price']:,}円")
 
@@ -472,11 +515,15 @@ set_counts = {
     1: 0,
     2: 0,
     3: 0,
-    4: 0
+    4: 0,
+    "ネギま限定": 0
 }
 
 for record in active_sales:
-    set_counts[record["pack_size"]] += 1
+    if record.get("special_set", False):
+        set_counts["ネギま限定"] += 1
+    else:
+        set_counts[record["pack_size"]] += 1
 
     for product, count in record["quantities"].items():
         if product in product_counts:
